@@ -1,0 +1,9 @@
+# Project Brain
+
+## 2026-06-24 Cardputer ADV boot fix
+
+- Symptom: firmware flashed successfully but the Cardputer ADV stayed on a black screen at power-on.
+- Root cause found: `M5.config()` falls back to `board_M5AtomS3Lite` on ESP32-S3 if runtime board detection does not resolve the ADV. That can leave the app initialized on the wrong display/keyboard path.
+- Fix: set `cfg.fallback_board = m5::board_t::board_M5CardputerADV;` before `M5Cardputer.begin(cfg);`.
+- Hardware note: this unit reports `Embedded Flash 8MB (GD)` via esptool, so the project should not force `default_16MB.csv` or `board_upload.flash_size = 16MB`.
+- Verification: rebuilt and flashed with PlatformIO to `/dev/ttyACM0`; user confirmed the app runs.

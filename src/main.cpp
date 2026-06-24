@@ -138,6 +138,7 @@ void initGame(bool keepDiff = false) {
 
 void setup() {
     auto cfg = M5.config();
+    cfg.fallback_board = m5::board_t::board_M5CardputerADV;
     M5Cardputer.begin(cfg);
     M5Cardputer.Display.setRotation(1);
     
