@@ -62,6 +62,7 @@ int highScore = 0;
 int currentScore = 0;
 
 enum AppState {
+    STATE_SPLASH,
     STATE_AUTH_MENU,
     STATE_WIFI_SCAN,
     STATE_WIFI_PASS,
@@ -69,15 +70,14 @@ enum AppState {
     STATE_LEADERBOARD,
     STATE_PLAYING
 };
-AppState appState = STATE_AUTH_MENU;
+AppState appState = STATE_SPLASH;
 
 bool isGuest = false;
 String authUser = "";
 String authPass = "";
 int authFocus = 0; 
-bool isRegistered = false;
-String savedUser = "";
-String savedPass = "";
+String savedSSID = "";
+String savedWifiPass = "";
 
 std::vector<String> wifiList;
 int wifiSelection = 0;
@@ -93,6 +93,7 @@ int mainMenuFocus = 0; // 0: PLAY, 1: LEADERBOARD
 // Forward declarations
 void initGame(bool keepDiff = false);
 void drawScreen();
+void drawSplash();
 void drawAuthMenu();
 void drawWifiScan();
 void drawWifiPass();
@@ -109,7 +110,91 @@ void drawMessage(String msg) {
     M5Cardputer.Display.endWrite();
 }
 
+std::vector<String> dummyLogs = {
+    "INIT KERNEL...",
+    "LOADING MEMORY...",
+    "BYPASSING SEC...",
+    "AUTH SERVER OK",
+    "NODE ACTIVE.",
+    "SCANNING...",
+    "PORT 80 OPEN",
+    "DECRYPTING...",
+    "ACCESS GRANTED.",
+    "PINGING RELAY...",
+    "FETCHING DATA..."
+};
+int logOffset = 0;
+unsigned long lastLogUpdate = 0;
+
+void drawSplash() {
+    M5Cardputer.Display.startWrite();
+    M5Cardputer.Display.fillScreen(CP_BG);
+    
+    M5Cardputer.Display.setTextColor(CP_CYAN);
+    M5Cardputer.Display.setTextSize(2);
+    M5Cardputer.Display.drawCenterString("Breach_Protocol", 120, 5);
+    
+    M5Cardputer.Display.setTextSize(1);
+    M5Cardputer.Display.setCursor(125, 40);
+    if (WiFi.status() == WL_CONNECTED) {
+        M5Cardputer.Display.setTextColor(CP_YELLOW);
+        M5Cardputer.Display.print("WIFI: CONNECTED");
+    } else {
+        M5Cardputer.Display.setTextColor(CP_DIM);
+        M5Cardputer.Display.print("WIFI: CONNECTING");
+    }
+    
+    M5Cardputer.Display.setTextColor(CP_DIM);
+    M5Cardputer.Display.setCursor(125, 60);
+    M5Cardputer.Display.print("VERSION: v3.1");
+    
+    int maxLogs = 7;
+    int y = 35;
+    M5Cardputer.Display.setTextColor(CP_ACTIVE_LINE);
+    for (int i = 0; i < maxLogs; i++) {
+        int logIdx = (logOffset + i) % dummyLogs.size();
+        M5Cardputer.Display.setCursor(5, y);
+        M5Cardputer.Display.print(dummyLogs[logIdx]);
+        y += 11;
+    }
+    
+    if (blinkState) {
+        M5Cardputer.Display.setTextColor(WHITE);
+        M5Cardputer.Display.setCursor(5, 120);
+        M5Cardputer.Display.print("> Press ENTER");
+    }
+    
+    M5Cardputer.Display.endWrite();
+}
+
+void handleSplashInput(Keyboard_Class::KeysState status) {
+    if (status.enter) {
+        playSound(sound_select, sound_select_size);
+        if (WiFi.status() == WL_CONNECTED) {
+            appState = STATE_AUTH_MENU;
+            drawAuthMenu();
+        } else {
+            startWifiScan();
+        }
+    }
+}
+
 void startWifiScan() {
+    if (savedSSID != "" && savedWifiPass != "") {
+        drawMessage("CONNECTING " + savedSSID + "...");
+        WiFi.begin(savedSSID.c_str(), savedWifiPass.c_str());
+        int attempts = 0;
+        while (WiFi.status() != WL_CONNECTED && attempts < 40) {
+            delay(100);
+            attempts++;
+        }
+        if (WiFi.status() == WL_CONNECTED) {
+            appState = STATE_AUTH_MENU;
+            drawAuthMenu();
+            return;
+        }
+    }
+
     drawMessage("SCANNING WIFI...");
     WiFi.mode(WIFI_STA);
     WiFi.disconnect();
@@ -188,22 +273,15 @@ void drawAuthMenu() {
     for(int i=0; i<authPass.length(); i++) starPass += "*";
     M5Cardputer.Display.print(starPass + ((authFocus == 1 && blinkState) ? "_" : ""));
 
-    if (isRegistered) {
-        uint16_t colorBtn1 = (authFocus == 2) ? CP_YELLOW : WHITE;
-        M5Cardputer.Display.drawRect(70, 105, 100, 20, colorBtn1);
-        M5Cardputer.Display.setTextColor(colorBtn1);
-        M5Cardputer.Display.drawCenterString("SIGN IN", 120, 110);
-    } else {
-        uint16_t colorBtn1 = (authFocus == 2) ? CP_YELLOW : WHITE;
-        M5Cardputer.Display.drawRect(10, 105, 100, 20, colorBtn1);
-        M5Cardputer.Display.setTextColor(colorBtn1);
-        M5Cardputer.Display.drawCenterString("SIGN UP", 60, 110);
-        
-        uint16_t colorBtn2 = (authFocus == 3) ? CP_YELLOW : WHITE;
-        M5Cardputer.Display.drawRect(130, 105, 100, 20, colorBtn2);
-        M5Cardputer.Display.setTextColor(colorBtn2);
-        M5Cardputer.Display.drawCenterString("GUEST", 180, 110);
-    }
+    uint16_t colorBtn1 = (authFocus == 2) ? CP_YELLOW : WHITE;
+    M5Cardputer.Display.drawRect(10, 105, 100, 20, colorBtn1);
+    M5Cardputer.Display.setTextColor(colorBtn1);
+    M5Cardputer.Display.drawCenterString("LOGIN", 60, 110);
+    
+    uint16_t colorBtn2 = (authFocus == 3) ? CP_YELLOW : WHITE;
+    M5Cardputer.Display.drawRect(130, 105, 100, 20, colorBtn2);
+    M5Cardputer.Display.setTextColor(colorBtn2);
+    M5Cardputer.Display.drawCenterString("GUEST", 180, 110);
     M5Cardputer.Display.endWrite();
 }
 
@@ -211,25 +289,34 @@ void handleAuthInput(Keyboard_Class::KeysState status) {
     if (status.enter) {
         playSound(sound_select, sound_select_size);
         if (authFocus == 2) {
-            if (!isRegistered) {
-                prefs.putString("username", authUser);
-                prefs.putString("password", authPass);
-                savedUser = authUser;
-                savedPass = authPass;
+            if (authUser == "") return;
+            drawMessage("AUTHENTICATING...");
+            
+            HTTPClient http;
+            http.begin("http://192.168.0.176:3000/api/auth");
+            http.addHeader("Content-Type", "application/json");
+            String payload = "{\"username\":\"" + authUser + "\",\"password\":\"" + authPass + "\"}";
+            int httpCode = http.POST(payload);
+            http.end();
+            
+            if (httpCode == 200) {
+                isGuest = false;
+                appState = STATE_MAIN_MENU;
+                drawMainMenu();
             } else {
-                if (authPass != savedPass) return; // Incorrect password
+                drawMessage("ACCESS DENIED");
+                delay(2000);
+                drawAuthMenu();
             }
-            isGuest = false;
-            startWifiScan();
             return;
-        } else if (authFocus == 3 && !isRegistered) {
+        } else if (authFocus == 3) {
             isGuest = true;
             appState = STATE_MAIN_MENU;
             drawMainMenu();
             return;
         }
         authFocus++;
-        if (authFocus > (isRegistered ? 2 : 3)) authFocus = 0;
+        if (authFocus > 3) authFocus = 0;
         return;
     }
     
@@ -241,13 +328,13 @@ void handleAuthInput(Keyboard_Class::KeysState status) {
     
     if (hasUp) {
         authFocus--;
-        if (authFocus < 0) authFocus = isRegistered ? 2 : 3;
+        if (authFocus < 0) authFocus = 3;
         playSound(sound_hover, sound_hover_size);
         return;
     }
     if (hasDown) {
         authFocus++;
-        if (authFocus > (isRegistered ? 2 : 3)) authFocus = 0;
+        if (authFocus > 3) authFocus = 0;
         playSound(sound_hover, sound_hover_size);
         return;
     }
@@ -255,8 +342,6 @@ void handleAuthInput(Keyboard_Class::KeysState status) {
     if (status.del) {
         if (authFocus == 0 && authUser.length() > 0) authUser.remove(authUser.length()-1);
         if (authFocus == 1 && authPass.length() > 0) authPass.remove(authPass.length()-1);
-        isRegistered = (authUser.length() > 0 && authUser == savedUser);
-        if (isRegistered && authFocus > 2) authFocus = 2; 
         return;
     }
     
@@ -266,9 +351,6 @@ void handleAuthInput(Keyboard_Class::KeysState status) {
             if (authFocus == 1 && authPass.length() < 16) authPass += c;
         }
     }
-    
-    isRegistered = (authUser.length() > 0 && authUser == savedUser);
-    if (isRegistered && authFocus > 2) authFocus = 2;
 }
 
 void drawWifiScan() {
@@ -312,7 +394,11 @@ void handleWifiScanInput(Keyboard_Class::KeysState status) {
     if (status.enter && wifiList.size() > 0) {
         playSound(sound_select, sound_select_size);
         appState = STATE_WIFI_PASS;
-        wifiPass = "";
+        if (wifiList[wifiSelection] == savedSSID) {
+            wifiPass = savedWifiPass;
+        } else {
+            wifiPass = "";
+        }
         drawWifiPass();
     }
 }
@@ -349,8 +435,13 @@ void handleWifiPassInput(Keyboard_Class::KeysState status) {
         }
         
         if (WiFi.status() == WL_CONNECTED) {
-            appState = STATE_MAIN_MENU;
-            drawMainMenu();
+            prefs.putString("wifi_ssid", wifiList[wifiSelection]);
+            prefs.putString("wifi_pass", wifiPass);
+            savedSSID = wifiList[wifiSelection];
+            savedWifiPass = wifiPass;
+            
+            appState = STATE_AUTH_MENU;
+            drawAuthMenu();
         } else {
             drawMessage("WIFI FAILED!");
             delay(2000);
@@ -522,17 +613,15 @@ void setup() {
     
     prefs.begin("breach", false);
     highScore = prefs.getInt("highscore", 0);
-    savedUser = prefs.getString("username", "");
-    savedPass = prefs.getString("password", "");
+    savedSSID = prefs.getString("wifi_ssid", "");
+    savedWifiPass = prefs.getString("wifi_pass", "");
     
-    if (savedUser != "") {
-        authUser = savedUser;
-        authPass = savedPass;
-        isRegistered = true;
+    if (savedSSID != "") {
+        WiFi.begin(savedSSID.c_str(), savedWifiPass.c_str());
     }
     
-    appState = STATE_AUTH_MENU;
-    drawAuthMenu();
+    appState = STATE_SPLASH;
+    drawSplash();
 }
 
 void drawTimer(bool forceRedraw = false) {
@@ -736,6 +825,24 @@ void updateAnimation() {
 void loop() {
     M5Cardputer.update();
     unsigned long now = millis();
+    
+    if (appState == STATE_SPLASH) {
+        if (now - lastLogUpdate > 200) {
+            logOffset++;
+            lastLogUpdate = now;
+            drawSplash();
+        }
+        if (now - lastBlink > 500) {
+            blinkState = !blinkState;
+            lastBlink = now;
+            drawSplash();
+        }
+        if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
+            handleSplashInput(M5Cardputer.Keyboard.keysState());
+        }
+        delay(10);
+        return;
+    }
     
     if (now - lastBlink > 500) {
         blinkState = !blinkState;
