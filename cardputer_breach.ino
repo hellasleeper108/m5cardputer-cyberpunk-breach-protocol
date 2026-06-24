@@ -1,4 +1,26 @@
 #include "M5Cardputer.h"
+#include <Preferences.h>
+
+// --- AUDIO PLACEHOLDERS ---
+// The user will provide the audio arrays later.
+const unsigned char* sound_hover = nullptr;
+size_t sound_hover_size = 0;
+
+const unsigned char* sound_select = nullptr;
+size_t sound_select_size = 0;
+
+const unsigned char* sound_success = nullptr;
+size_t sound_success_size = 0;
+
+const unsigned char* sound_fail = nullptr;
+size_t sound_fail_size = 0;
+
+void playSound(const unsigned char* soundData, size_t soundSize) {
+    if (soundData != nullptr && soundSize > 0) {
+        M5Cardputer.Speaker.playWav(soundData, soundSize);
+    }
+}
+// --------------------------
 
 // Cyberpunk Colors in RGB565
 #define CP_YELLOW M5Cardputer.Display.color565(220, 244, 27)
@@ -34,6 +56,27 @@ unsigned long animStartTime = 0;
 bool isAnimating = false;
 bool blinkState = false;
 unsigned long lastBlink = 0;
+
+Preferences prefs;
+int highScore = 0;
+int currentScore = 0;
+bool inMenu = true;
+
+void drawMenu() {
+    M5Cardputer.Display.startWrite();
+    M5Cardputer.Display.fillScreen(CP_BG);
+    M5Cardputer.Display.setTextColor(CP_CYAN);
+    M5Cardputer.Display.setTextSize(2);
+    M5Cardputer.Display.drawCenterString("BREACH", 120, 30);
+    M5Cardputer.Display.drawCenterString("PROTOCOL", 120, 55);
+    
+    M5Cardputer.Display.setTextSize(1);
+    M5Cardputer.Display.setTextColor(CP_YELLOW);
+    M5Cardputer.Display.drawCenterString("HIGH SCORE: " + String(highScore), 120, 90);
+    M5Cardputer.Display.endWrite();
+    blinkState = true;
+    lastBlink = millis();
+}
 
 void initGame(bool keepDiff = false) {
     if (!keepDiff) {
@@ -98,8 +141,14 @@ void setup() {
     M5Cardputer.begin(cfg);
     M5Cardputer.Display.setRotation(1);
     
-    initGame();
-    drawScreen();
+    // Initialize Speaker
+    M5Cardputer.Speaker.setVolume(128);
+    
+    prefs.begin("breach", false);
+    highScore = prefs.getInt("highscore", 0);
+    
+    inMenu = true;
+    drawMenu();
 }
 
 void drawTimer(bool forceRedraw = false) {
@@ -147,7 +196,8 @@ void drawScreen() {
     M5Cardputer.Display.setTextColor(CP_YELLOW, CP_PANEL);
     M5Cardputer.Display.setTextSize(1);
     M5Cardputer.Display.setCursor(5, 5);
-    M5Cardputer.Display.print("BREACH TIME");
+    M5Cardputer.Display.print("SCORE: ");
+    M5Cardputer.Display.print(currentScore);
     
     M5Cardputer.Display.drawRect(144, 4, 84, 10, CP_YELLOW);
     drawTimer(true);
@@ -303,6 +353,35 @@ void loop() {
     M5Cardputer.update();
     
     unsigned long now = millis();
+    
+    if (inMenu) {
+        if (now - lastBlink > 600) {
+            blinkState = !blinkState;
+            lastBlink = now;
+            M5Cardputer.Display.startWrite();
+            if (blinkState) {
+                M5Cardputer.Display.setTextColor(WHITE, CP_BG);
+                M5Cardputer.Display.drawCenterString("Press ENTER to Start", 120, 115);
+            } else {
+                M5Cardputer.Display.fillRect(0, 115, 240, 18, CP_BG);
+            }
+            M5Cardputer.Display.endWrite();
+        }
+        
+        if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
+            Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
+            if (status.enter) {
+                playSound(sound_select, sound_select_size);
+                inMenu = false;
+                currentScore = 0;
+                initGame();
+                drawScreen();
+            }
+        }
+        delay(10);
+        return;
+    }
+
     if (!gameOver && now - lastUpdate > 10) {
         timeLeft -= (now - lastUpdate) / 10;
         lastUpdate = now;
@@ -310,6 +389,7 @@ void loop() {
             timeLeft = 0;
             gameOver = true;
             hackSuccess = false;
+            playSound(sound_fail, sound_fail_size);
             isAnimating = true;
             animStartTime = now;
             drawScreen();
@@ -344,9 +424,15 @@ void loop() {
         
         if (gameOver) {
             if (status.enter) {
-                // If hack failed, retry with same difficulty. If success, new difficulty.
-                initGame(!hackSuccess);
-                drawScreen();
+                if (hackSuccess) {
+                    playSound(sound_select, sound_select_size);
+                    initGame(false); // next level, keep diff random
+                    drawScreen();
+                } else {
+                    playSound(sound_select, sound_select_size);
+                    inMenu = true;
+                    drawMenu();
+                }
             }
             return;
         }
@@ -368,18 +454,22 @@ void loop() {
         int cC_curr = isRowActive ? cursorIdx : activeCol;
 
         if (hasComma || hasA || hasSemi || hasW) {
+            bool moved = false;
             if (isRowActive) {
-                for(int j=cC_curr-1; j>=0; j--) { if (matrix[cR_curr][j] != "") { cursorIdx = j; break; } }
+                for(int j=cC_curr-1; j>=0; j--) { if (matrix[cR_curr][j] != "") { cursorIdx = j; moved = true; break; } }
             } else {
-                for(int i=cR_curr-1; i>=0; i--) { if (matrix[i][cC_curr] != "") { cursorIdx = i; break; } }
+                for(int i=cR_curr-1; i>=0; i--) { if (matrix[i][cC_curr] != "") { cursorIdx = i; moved = true; break; } }
             }
+            if (moved) playSound(sound_hover, sound_hover_size);
         }
         if (hasSlash || hasD || hasDot || hasS) {
+            bool moved = false;
             if (isRowActive) {
-                for(int j=cC_curr+1; j<gridSize; j++) { if (matrix[cR_curr][j] != "") { cursorIdx = j; break; } }
+                for(int j=cC_curr+1; j<gridSize; j++) { if (matrix[cR_curr][j] != "") { cursorIdx = j; moved = true; break; } }
             } else {
-                for(int i=cR_curr+1; i<gridSize; i++) { if (matrix[i][cC_curr] != "") { cursorIdx = i; break; } }
+                for(int i=cR_curr+1; i<gridSize; i++) { if (matrix[i][cC_curr] != "") { cursorIdx = i; moved = true; break; } }
             }
+            if (moved) playSound(sound_hover, sound_hover_size);
         }
         
         if (status.enter) {
@@ -387,6 +477,8 @@ void loop() {
             int cC = isRowActive ? cursorIdx : activeCol;
             
             if (matrix[cR][cC] != "") {
+                playSound(sound_select, sound_select_size);
+                
                 buffer[bufferIndex++] = matrix[cR][cC];
                 matrix[cR][cC] = ""; 
                 
@@ -429,8 +521,15 @@ void loop() {
                     gameOver = true;
                     if (isPrefix && bufferIndex == targetSize) {
                         hackSuccess = true;
+                        currentScore += 100 + (timeLeft / 10);
+                        if (currentScore > highScore) {
+                            highScore = currentScore;
+                            prefs.putInt("highscore", highScore);
+                        }
+                        playSound(sound_success, sound_success_size);
                     } else {
                         hackSuccess = false;
+                        playSound(sound_fail, sound_fail_size);
                     }
                     isAnimating = true;
                     animStartTime = millis();
