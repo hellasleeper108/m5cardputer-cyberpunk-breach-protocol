@@ -7,3 +7,9 @@
 - Fix: set `cfg.fallback_board = m5::board_t::board_M5CardputerADV;` before `M5Cardputer.begin(cfg);`.
 - Hardware note: this unit reports `Embedded Flash 8MB (GD)` via esptool, so the project should not force `default_16MB.csv` or `board_upload.flash_size = 16MB`.
 - Verification: rebuilt and flashed with PlatformIO to `/dev/ttyACM0`; user confirmed the app runs.
+
+## 2026-06-24 Upstream merge notes
+
+- Upstream added leaderboard/auth/WiFi code and website files. The PlatformIO build needed `bblanchon/ArduinoJson` added to `lib_deps`.
+- Upstream code came from Arduino `.ino` style and relied on generated function prototypes; `src/main.cpp` needs explicit forward declarations for PlatformIO.
+- Verification after merge: `pio run -e m5cardputer-adv` succeeds.

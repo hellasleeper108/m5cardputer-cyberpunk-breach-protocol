@@ -99,7 +99,16 @@ void drawWifiScan();
 void drawWifiPass();
 void drawMainMenu();
 void drawLeaderboard();
+void drawMessage(String msg);
+void handleSplashInput(Keyboard_Class::KeysState status);
+void startWifiScan();
+void submitScore();
 void fetchLeaderboard();
+void handleAuthInput(Keyboard_Class::KeysState status);
+void handleWifiScanInput(Keyboard_Class::KeysState status);
+void handleWifiPassInput(Keyboard_Class::KeysState status);
+void handleMainMenuInput(Keyboard_Class::KeysState status);
+void updateAnimation();
 
 void drawMessage(String msg) {
     M5Cardputer.Display.startWrite();
