@@ -13,3 +13,11 @@
 - Upstream added leaderboard/auth/WiFi code and website files. The PlatformIO build needed `bblanchon/ArduinoJson` added to `lib_deps`.
 - Upstream code came from Arduino `.ino` style and relied on generated function prototypes; `src/main.cpp` needs explicit forward declarations for PlatformIO.
 - Verification after merge: `pio run -e m5cardputer-adv` succeeds.
+
+## 2026-06-24 Effects and difficulty pass
+
+- Added procedural speaker tones for boot, hover, select, typing, success, and failure. This replaces the previous null WAV placeholders, so audio now works without bundled sample arrays.
+- Added glitch burst rendering for boot/menu/gameplay transitions and occasional splash static.
+- Added persisted difficulty settings: Easy, Normal, Hard, Nightmare. Difficulty controls grid size, target length, timer pressure, and score multiplier.
+- Main menu now has HACK, DIFF, and LEADERBOARD. Enter on DIFF cycles difficulty; left/right on DIFF also cycles.
+- Verification: `pio run -e m5cardputer-adv` succeeds and the final build was flashed to `/dev/ttyACM0`.

@@ -5,23 +5,6 @@
 #include <vector>
 #include <ArduinoJson.h>
 
-// --- AUDIO PLACEHOLDERS ---
-const unsigned char* sound_hover = nullptr;
-size_t sound_hover_size = 0;
-const unsigned char* sound_select = nullptr;
-size_t sound_select_size = 0;
-const unsigned char* sound_success = nullptr;
-size_t sound_success_size = 0;
-const unsigned char* sound_fail = nullptr;
-size_t sound_fail_size = 0;
-
-void playSound(const unsigned char* soundData, size_t soundSize) {
-    if (soundData != nullptr && soundSize > 0) {
-        M5Cardputer.Speaker.playWav(soundData, soundSize);
-    }
-}
-// --------------------------
-
 // Cyberpunk Colors in RGB565
 #define CP_YELLOW M5Cardputer.Display.color565(220, 244, 27)
 #define CP_CYAN M5Cardputer.Display.color565(56, 190, 201)
@@ -61,6 +44,16 @@ Preferences prefs;
 int highScore = 0;
 int currentScore = 0;
 
+enum Difficulty {
+    DIFF_EASY,
+    DIFF_NORMAL,
+    DIFF_HARD,
+    DIFF_NIGHTMARE,
+    DIFF_COUNT
+};
+Difficulty difficulty = DIFF_NORMAL;
+const char* difficultyNames[] = {"EASY", "NORMAL", "HARD", "NIGHTMARE"};
+
 enum AppState {
     STATE_SPLASH,
     STATE_AUTH_MENU,
@@ -88,7 +81,7 @@ struct LeaderboardEntry {
     int score;
 };
 std::vector<LeaderboardEntry> globalLeaderboard;
-int mainMenuFocus = 0; // 0: PLAY, 1: LEADERBOARD
+int mainMenuFocus = 0; // 0: HACK, 1: DIFFICULTY, 2: LEADERBOARD
 
 // Forward declarations
 void initGame(bool keepDiff = false);
@@ -109,6 +102,69 @@ void handleWifiScanInput(Keyboard_Class::KeysState status);
 void handleWifiPassInput(Keyboard_Class::KeysState status);
 void handleMainMenuInput(Keyboard_Class::KeysState status);
 void updateAnimation();
+void playHoverSound();
+void playSelectSound();
+void playSuccessSound();
+void playFailSound();
+void playTypeSound();
+void playBootSound();
+void drawGlitchBurst(uint8_t intensity);
+void cycleDifficulty(int dir);
+
+void playHoverSound() {
+    M5Cardputer.Speaker.tone(1460 + random(0, 180), 18, 0, true);
+}
+
+void playSelectSound() {
+    M5Cardputer.Speaker.tone(880, 35, 0, true);
+    M5Cardputer.Speaker.tone(1320, 55, 1, true);
+}
+
+void playSuccessSound() {
+    M5Cardputer.Speaker.tone(660, 90, 0, true);
+    M5Cardputer.Speaker.tone(990, 120, 1, true);
+    M5Cardputer.Speaker.tone(1320, 160, 2, true);
+}
+
+void playFailSound() {
+    M5Cardputer.Speaker.tone(220, 180, 0, true);
+    M5Cardputer.Speaker.tone(147, 240, 1, true);
+}
+
+void playTypeSound() {
+    M5Cardputer.Speaker.tone(1800 + random(0, 500), 10, 0, true);
+}
+
+void playBootSound() {
+    M5Cardputer.Speaker.tone(330, 70, 0, true);
+    M5Cardputer.Speaker.tone(660, 90, 1, true);
+}
+
+void drawGlitchBurst(uint8_t intensity) {
+    M5Cardputer.Display.startWrite();
+    for (uint8_t i = 0; i < intensity; i++) {
+        int y = random(0, 135);
+        int h = random(1, 5);
+        int x = random(0, 220);
+        int w = random(12, 70);
+        uint16_t color = (i % 3 == 0) ? CP_CYAN : ((i % 3 == 1) ? CP_RED : CP_YELLOW);
+        M5Cardputer.Display.fillRect(x, y, w, h, color);
+        if (random(0, 3) == 0) {
+            M5Cardputer.Display.setTextColor(BLACK, color);
+            M5Cardputer.Display.setTextSize(1);
+            M5Cardputer.Display.setCursor(x + 2, y);
+            M5Cardputer.Display.print(hexCodes[random(7)]);
+        }
+    }
+    M5Cardputer.Display.endWrite();
+}
+
+void cycleDifficulty(int dir) {
+    difficulty = (Difficulty)((difficulty + dir + DIFF_COUNT) % DIFF_COUNT);
+    prefs.putInt("difficulty", difficulty);
+    playSelectSound();
+    drawGlitchBurst(8);
+}
 
 void drawMessage(String msg) {
     M5Cardputer.Display.startWrite();
@@ -178,7 +234,8 @@ void drawSplash() {
 
 void handleSplashInput(Keyboard_Class::KeysState status) {
     if (status.enter) {
-        playSound(sound_select, sound_select_size);
+        playSelectSound();
+        drawGlitchBurst(10);
         if (WiFi.status() == WL_CONNECTED) {
             appState = STATE_AUTH_MENU;
             drawAuthMenu();
@@ -296,7 +353,7 @@ void drawAuthMenu() {
 
 void handleAuthInput(Keyboard_Class::KeysState status) {
     if (status.enter) {
-        playSound(sound_select, sound_select_size);
+        playSelectSound();
         if (authFocus == 2) {
             if (authUser == "") return;
             drawMessage("AUTHENTICATING...");
@@ -338,13 +395,13 @@ void handleAuthInput(Keyboard_Class::KeysState status) {
     if (hasUp) {
         authFocus--;
         if (authFocus < 0) authFocus = 3;
-        playSound(sound_hover, sound_hover_size);
+        playHoverSound();
         return;
     }
     if (hasDown) {
         authFocus++;
         if (authFocus > 3) authFocus = 0;
-        playSound(sound_hover, sound_hover_size);
+        playHoverSound();
         return;
     }
     
@@ -358,6 +415,7 @@ void handleAuthInput(Keyboard_Class::KeysState status) {
         if (c >= 32 && c <= 126) {
             if (authFocus == 0 && authUser.length() < 16) authUser += c;
             if (authFocus == 1 && authPass.length() < 16) authPass += c;
+            playTypeSound();
         }
     }
 }
@@ -393,15 +451,15 @@ void handleWifiScanInput(Keyboard_Class::KeysState status) {
     
     if (hasUp && wifiSelection > 0) {
         wifiSelection--;
-        playSound(sound_hover, sound_hover_size);
+        playHoverSound();
     }
     if (hasDown && wifiSelection < wifiList.size() - 1) {
         wifiSelection++;
-        playSound(sound_hover, sound_hover_size);
+        playHoverSound();
     }
     
     if (status.enter && wifiList.size() > 0) {
-        playSound(sound_select, sound_select_size);
+        playSelectSound();
         appState = STATE_WIFI_PASS;
         if (wifiList[wifiSelection] == savedSSID) {
             wifiPass = savedWifiPass;
@@ -433,7 +491,7 @@ void drawWifiPass() {
 
 void handleWifiPassInput(Keyboard_Class::KeysState status) {
     if (status.enter) {
-        playSound(sound_select, sound_select_size);
+        playSelectSound();
         drawMessage("CONNECTING...");
         WiFi.begin(wifiList[wifiSelection].c_str(), wifiPass.c_str());
         
@@ -463,7 +521,10 @@ void handleWifiPassInput(Keyboard_Class::KeysState status) {
     if (status.del && wifiPass.length() > 0) wifiPass.remove(wifiPass.length()-1);
     
     for (char c : status.word) {
-        if (c >= 32 && c <= 126 && wifiPass.length() < 32) wifiPass += c;
+        if (c >= 32 && c <= 126 && wifiPass.length() < 32) {
+            wifiPass += c;
+            playTypeSound();
+        }
     }
 }
 
@@ -479,26 +540,35 @@ void drawMainMenu() {
     M5Cardputer.Display.drawCenterString("OPERATIVE: " + (isGuest ? String("GUEST") : authUser), 120, 40);
     
     uint16_t colorPlay = (mainMenuFocus == 0) ? CP_YELLOW : WHITE;
-    M5Cardputer.Display.drawRect(70, 65, 100, 20, colorPlay);
+    M5Cardputer.Display.drawRect(50, 58, 140, 18, colorPlay);
     M5Cardputer.Display.setTextColor(colorPlay);
-    M5Cardputer.Display.drawCenterString("HACK", 120, 70);
+    M5Cardputer.Display.drawCenterString("HACK", 120, 63);
     
-    uint16_t colorLDB = (mainMenuFocus == 1) ? CP_YELLOW : WHITE;
-    M5Cardputer.Display.drawRect(70, 95, 100, 20, colorLDB);
+    uint16_t colorDiff = (mainMenuFocus == 1) ? CP_YELLOW : WHITE;
+    M5Cardputer.Display.drawRect(50, 82, 140, 18, colorDiff);
+    M5Cardputer.Display.setTextColor(colorDiff);
+    M5Cardputer.Display.drawCenterString("DIFF: " + String(difficultyNames[difficulty]), 120, 87);
+    
+    uint16_t colorLDB = (mainMenuFocus == 2) ? CP_YELLOW : WHITE;
+    M5Cardputer.Display.drawRect(50, 106, 140, 18, colorLDB);
     M5Cardputer.Display.setTextColor(colorLDB);
-    M5Cardputer.Display.drawCenterString("LEADERBOARD", 120, 100);
+    M5Cardputer.Display.drawCenterString("LEADERBOARD", 120, 111);
     
     M5Cardputer.Display.endWrite();
 }
 
 void handleMainMenuInput(Keyboard_Class::KeysState status) {
     if (status.enter) {
-        playSound(sound_select, sound_select_size);
+        playSelectSound();
         if (mainMenuFocus == 0) {
+            drawGlitchBurst(12);
             appState = STATE_PLAYING;
             currentScore = 0;
             initGame();
             drawScreen();
+        } else if (mainMenuFocus == 1) {
+            cycleDifficulty(1);
+            drawMainMenu();
         } else {
             appState = STATE_LEADERBOARD;
             drawMessage("FETCHING DATABANK...");
@@ -509,14 +579,26 @@ void handleMainMenuInput(Keyboard_Class::KeysState status) {
     }
     
     bool hasUp = false, hasDown = false;
+    bool hasLeft = false, hasRight = false;
     for (char c : status.word) {
         if (c == ';') hasUp = true;
         if (c == '.') hasDown = true;
+        if (c == ',' || c == 'a') hasLeft = true;
+        if (c == '/' || c == 'd') hasRight = true;
     }
     
-    if (hasUp || hasDown) {
-        mainMenuFocus = (mainMenuFocus == 0) ? 1 : 0;
-        playSound(sound_hover, sound_hover_size);
+    if (hasUp) {
+        mainMenuFocus--;
+        if (mainMenuFocus < 0) mainMenuFocus = 2;
+        playHoverSound();
+    }
+    if (hasDown) {
+        mainMenuFocus++;
+        if (mainMenuFocus > 2) mainMenuFocus = 0;
+        playHoverSound();
+    }
+    if (mainMenuFocus == 1 && (hasLeft || hasRight)) {
+        cycleDifficulty(hasRight ? 1 : -1);
     }
 }
 
@@ -557,13 +639,37 @@ void drawLeaderboard() {
 
 void initGame(bool keepDiff) {
     if (!keepDiff) {
-        int sizes[] = {3, 4, 5};
-        gridSize = sizes[random(3)];
-        if (gridSize == 3) maxTime = 1500;
-        else if (gridSize == 4) maxTime = 2000;
-        else maxTime = 2500;
-        
-        targetSize = random(4, 7);
+        switch (difficulty) {
+            case DIFF_EASY:
+                gridSize = 3;
+                targetSize = random(4, 5);
+                maxTime = 3000;
+                break;
+            case DIFF_NORMAL: {
+                int sizes[] = {3, 4, 5};
+                gridSize = sizes[random(3)];
+                targetSize = random(4, 7);
+                if (gridSize == 3) maxTime = 1800;
+                else if (gridSize == 4) maxTime = 2200;
+                else maxTime = 2600;
+                break;
+            }
+            case DIFF_HARD:
+                gridSize = random(4, 6);
+                targetSize = random(5, 7);
+                maxTime = (gridSize == 4) ? 1600 : 1900;
+                break;
+            case DIFF_NIGHTMARE:
+                gridSize = 5;
+                targetSize = 6;
+                maxTime = 1300;
+                break;
+            default:
+                gridSize = 4;
+                targetSize = 5;
+                maxTime = 2000;
+                break;
+        }
     }
 
     for(int i=0; i<gridSize; i++) {
@@ -619,10 +725,13 @@ void setup() {
     M5Cardputer.begin(cfg);
     M5Cardputer.Display.setRotation(1);
     
-    M5Cardputer.Speaker.setVolume(128);
+    M5Cardputer.Speaker.setVolume(96);
+    randomSeed(micros());
     
     prefs.begin("breach", false);
     highScore = prefs.getInt("highscore", 0);
+    difficulty = (Difficulty)prefs.getInt("difficulty", DIFF_NORMAL);
+    if (difficulty < DIFF_EASY || difficulty >= DIFF_COUNT) difficulty = DIFF_NORMAL;
     savedSSID = prefs.getString("wifi_ssid", "");
     savedWifiPass = prefs.getString("wifi_pass", "");
     
@@ -631,6 +740,7 @@ void setup() {
     }
     
     appState = STATE_SPLASH;
+    playBootSound();
     drawSplash();
 }
 
@@ -681,6 +791,9 @@ void drawScreen() {
     M5Cardputer.Display.setCursor(5, 5);
     M5Cardputer.Display.print("SCORE: ");
     M5Cardputer.Display.print(currentScore);
+    M5Cardputer.Display.setTextColor(CP_DIM, CP_PANEL);
+    M5Cardputer.Display.setCursor(70, 5);
+    M5Cardputer.Display.print(difficultyNames[difficulty][0]);
     
     M5Cardputer.Display.drawRect(144, 4, 84, 10, CP_YELLOW);
     drawTimer(true);
@@ -841,6 +954,7 @@ void loop() {
             logOffset++;
             lastLogUpdate = now;
             drawSplash();
+            if (random(0, 5) == 0) drawGlitchBurst(4);
         }
         if (now - lastBlink > 500) {
             blinkState = !blinkState;
@@ -901,7 +1015,7 @@ void loop() {
         if (M5Cardputer.Keyboard.isChange() && M5Cardputer.Keyboard.isPressed()) {
             Keyboard_Class::KeysState status = M5Cardputer.Keyboard.keysState();
             if (status.enter || status.del) {
-                playSound(sound_select, sound_select_size);
+                playSelectSound();
                 appState = STATE_MAIN_MENU;
                 drawMainMenu();
             }
@@ -917,7 +1031,8 @@ void loop() {
             timeLeft = 0;
             gameOver = true;
             hackSuccess = false;
-            playSound(sound_fail, sound_fail_size);
+            drawGlitchBurst(18);
+            playFailSound();
             isAnimating = true;
             animStartTime = now;
             drawScreen();
@@ -953,11 +1068,11 @@ void loop() {
         if (gameOver) {
             if (status.enter) {
                 if (hackSuccess) {
-                    playSound(sound_select, sound_select_size);
+                    playSelectSound();
                     initGame(false); // next level
                     drawScreen();
                 } else {
-                    playSound(sound_select, sound_select_size);
+                    playSelectSound();
                     appState = STATE_MAIN_MENU;
                     drawMainMenu();
                 }
@@ -988,7 +1103,10 @@ void loop() {
             } else {
                 for(int i=cR_curr-1; i>=0; i--) { if (matrix[i][cC_curr] != "") { cursorIdx = i; moved = true; break; } }
             }
-            if (moved) playSound(sound_hover, sound_hover_size);
+            if (moved) {
+                playHoverSound();
+                drawGlitchBurst(2);
+            }
         }
         if (hasSlash || hasD || hasDot || hasS) {
             bool moved = false;
@@ -997,7 +1115,10 @@ void loop() {
             } else {
                 for(int i=cR_curr+1; i<gridSize; i++) { if (matrix[i][cC_curr] != "") { cursorIdx = i; moved = true; break; } }
             }
-            if (moved) playSound(sound_hover, sound_hover_size);
+            if (moved) {
+                playHoverSound();
+                drawGlitchBurst(2);
+            }
         }
         
         if (status.enter) {
@@ -1005,7 +1126,8 @@ void loop() {
             int cC = isRowActive ? cursorIdx : activeCol;
             
             if (matrix[cR][cC] != "") {
-                playSound(sound_select, sound_select_size);
+                playSelectSound();
+                drawGlitchBurst(5);
                 
                 buffer[bufferIndex++] = matrix[cR][cC];
                 matrix[cR][cC] = ""; 
@@ -1049,16 +1171,19 @@ void loop() {
                     gameOver = true;
                     if (isPrefix && bufferIndex == targetSize) {
                         hackSuccess = true;
-                        currentScore += 100 + (timeLeft / 10);
+                        int scoreMultiplier = 1 + difficulty;
+                        currentScore += (100 + (timeLeft / 10)) * scoreMultiplier;
                         if (currentScore > highScore) {
                             highScore = currentScore;
                             prefs.putInt("highscore", highScore);
                         }
                         submitScore();
-                        playSound(sound_success, sound_success_size);
+                        drawGlitchBurst(16);
+                        playSuccessSound();
                     } else {
                         hackSuccess = false;
-                        playSound(sound_fail, sound_fail_size);
+                        drawGlitchBurst(20);
+                        playFailSound();
                     }
                     isAnimating = true;
                     animStartTime = millis();
